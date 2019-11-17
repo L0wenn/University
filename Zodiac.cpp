@@ -6,29 +6,27 @@ using namespace std;
 int main()
 {
 	int day, month;
-	bool stupidProtect = true;
 
 	cout << "Enter month and day of your birth \n" << endl;
 
-	while (stupidProtect)
+	while (true)
 	{
 		cout << "Month: ";
 		cin >> month;
 		if (month > 12)
 			cout << "Month is out of the year range! Please, try again! ";
 		else
-			stupidProtect = false;
+			break;
 	}
 
-	stupidProtect = true;
-	while (stupidProtect)
+	while (true)
 	{
 		cout << "Day: ";
 		cin >> day;
 		if (day > 31 || month == 2 && day > 28)
 			cout << "Day is out of month range! Please, try again! ";
 		else
-			stupidProtect = false;
+			break;
 	}
 
 	//Copied from stackoverflow because lazy :^)
