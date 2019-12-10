@@ -62,12 +62,15 @@ void numberToWord() //task 12
 	const string tens[] = {"twenty", "thirty", "fourty", "fifty", "sixty", "seventy", "eighty", "ninety"};
 
 	cout << "Enter any number from 100 to 999: ";
-	cin >> num;
-
-	if (num > 999 || num < 100)
-		throw "unsuported";
-
-
+	while (true)
+	{
+		cin >> num;
+		if (num > 999 || num < 100)
+			cout << "Only numbers in range [100, 999]: ";
+		else
+			break;
+	}
+	
 	if (num % 10 == 0)
 		cout << teens[num / 100 - 1] << " hundred " << tens[num % 100 / 10 - 2];
 	else
@@ -88,10 +91,14 @@ void ageToWords() //task 19
 	const string ageWord[] = { "год", "года", "лет" };
 
 	cout << "Ваш возраст: ";
-	cin >> age;
-
-	if (age > 69 || age < 20)
-		throw "unsuported";
+	while (true)
+	{
+		cin >> age;
+		if (age > 69 || age < 20)
+			cout << "Возраст только в пределах [20, 69]: ";
+		else
+			break;
+	}
 
 	if (age % 10 == 0)
 		cout << tens[age / 10 - 2];
