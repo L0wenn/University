@@ -14,6 +14,7 @@ import sys
 import time
 from functools import wraps
 from urllib.parse import urljoin
+from zipfile import BadZipFile
 
 import openpyxl
 import requests
@@ -35,7 +36,7 @@ with open("ignored.json", "r") as f:
 def timeout(seconds=100, error_message=os.strerror(errno.ETIME)):
     def decorator(func):
         def _handle_timeout(signum, frame):
-            print("Script stuck! Restarting in 5 minutes")
+            print("Refreshing ")
             try:
                 for line in os.popen("ps ax | grep firefox | grep -v grep"):
                     fields = line.split()
@@ -45,7 +46,6 @@ def timeout(seconds=100, error_message=os.strerror(errno.ETIME)):
                 print("An error encountered while closing Firefox processes:", e)
                 exit(0)
 
-            #time.sleep(300)
             os.execv(sys.executable, ['python'] + sys.argv)
 
         def wrapper(*args, **kwargs):
@@ -86,9 +86,9 @@ def parse(url:str, driver: WebDriver):
             parse(absolute_link, page)
             add_link_to_ignored(absolute_link)
     else:
-        bp = driver.current_url
-        save_part(bp, page)
-        add_link_to_ignored(bp)
+        blueprint = driver.current_url
+        save_part(blueprint, page)
+        add_link_to_ignored(blueprint)
 
 @timeout(30)
 def save_part(url: str, driver: WebDriver):
@@ -130,7 +130,13 @@ def save_part(url: str, driver: WebDriver):
         add_link_to_ignored(absolute_link)
 
 def write_to_xls(url: str, image, driver: WebDriver):
-    wb = openpyxl.load_workbook("data.xlsx")
+    try:
+        wb = openpyxl.load_workbook("data.xlsx")
+    except BadZipFile:
+        os.remove("data.xlsx")
+        os.rename("recovery_data.xlsx", "data.xlsx")
+        wb = openpyxl.load_workbook("data.xlsx")
+
     page = wb.active
     filename = image.split("/")[-1]
     info = [filename if not filename.startswith("image not available") else "chinatown.jpg"]
@@ -164,8 +170,11 @@ def write_to_xls(url: str, image, driver: WebDriver):
     info.append(path.replace("Каталоги/", ""))
     info.append(comm.replace("\nОписание\n\t", ""))
 
+    shutil.copy("data.xlsx", "recovery_data.xlsx")
     page.append(info)
     wb.save("data.xlsx")
+    wb.close()
+    
 
 def download_image(url: str):
     filename = url.split("/")[-1]
@@ -198,6 +207,9 @@ def connect_to(url: str, driver: WebDriver) -> WebDriver:
         connect_to(url, driver)
 
 def add_link_to_ignored(url: str):
+    if url in ignore_links:
+        return
+
     ignore_links.append(url)
     d = {"ignored": ignore_links}
 
@@ -230,6 +242,7 @@ if __name__ == "__main__":
         page = wb.active
         page.append(headers)
         wb.save("data.xlsx")
+        wb.close()
 
     opts = Options()
     ff_driver = os.getcwd() + "/geckodriver"
