@@ -13,6 +13,7 @@ import signal
 import sys
 import time
 from functools import wraps
+from typing import Union
 from urllib.parse import urljoin
 from zipfile import BadZipFile
 
@@ -95,8 +96,6 @@ def save_part(url: str, driver: WebDriver):
     # Download blueprints first
     if url in ignore_links:
         return
-    elif check_400(driver):
-        add_link_to_ignored(driver.current_url)
 
     soup = bs(driver.page_source, "html.parser")
     bp_div = soup.find("div", class_="category_description")
@@ -117,6 +116,9 @@ def save_part(url: str, driver: WebDriver):
             continue
 
         page = connect_to(absolute_link, driver)
+        if not page:
+            continue 
+
         soup = bs(page.page_source, "html.parser")
         img_div = soup.find("div", class_="main-image")
 
@@ -175,7 +177,6 @@ def write_to_xls(url: str, image, driver: WebDriver):
     wb.save("data.xlsx")
     wb.close()
     
-
 def download_image(url: str):
     filename = url.split("/")[-1]
     path = f"images/{filename}"
@@ -194,10 +195,13 @@ def download_image(url: str):
         print("Retrying...")
         download_image(url)
 
-def connect_to(url: str, driver: WebDriver) -> WebDriver:
+def connect_to(url: str, driver: WebDriver) -> Union[WebDriver, bool]:
     try:
         wait = WebDriverWait(driver, 10)
         driver.get(url)
+        if check_400(driver):
+            return False
+            
         time.sleep(5)
         wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "a")))
 
@@ -218,8 +222,9 @@ def add_link_to_ignored(url: str):
 
 def check_400(driver: WebDriver) -> bool:
     soup = bs(driver.page_source, "html.parser")
+    center = soup.find("center")
     try:
-        h1 = soup.find("h1").text
+        h1 = center.find("h1").text
     except AttributeError:
         return False
 
@@ -247,5 +252,5 @@ if __name__ == "__main__":
     opts = Options()
     ff_driver = os.getcwd() + "/geckodriver"
     driver = webdriver.Firefox(options=opts, executable_path=ff_driver)
-    parse(URL, driver)
+    parse("https://dealler.ru/katalog/haval/haval-haval-h1/haval-h1-left-hand-drive-model-blue-logo-hf-h1-2/haval-h1-left-hand-drive-model-blue-logo-haval-h1-cc7151bma0p-16-ch035-g87-16/haval-h1-left-hand-drive-model-blue-logo-haval-h1-cc7151bma0p-16-%D0%B2%D0%BD%D1%83%D1%82%D1%80%D0%B5%D0%BD%D0%BD%D1%8F%D1%8F-%D0%B8-%D0%B2%D0%BD%D0%B5%D1%88%D0%BD%D1%8F%D1%8F-%D0%BE%D1%82%D0%B4%D0%B5%D0%BB%D0%BA%D0%B0-ch035-4-g87-16/haval-h1-cc7151bma0p-16-%D0%B2%D0%BD%D1%83%D1%82%D1%80%D0%B5%D0%BD%D0%BD%D1%8F%D1%8F-%D0%B8-%D0%B2%D0%BD%D0%B5%D1%88%D0%BD%D1%8F%D1%8F-%D0%BE%D1%82%D0%B4%D0%B5%D0%BB%D0%BA%D0%B0-%D0%B7%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9-%D1%80%D0%B5%D0%BC%D0%B5%D0%BD%D1%8C-%D0%B1%D0%B5%D0%B7%D0%BE%D0%BF%D0%B0%D1%81%D0%BD%D0%BE%D1%81%D1%82%D0%B8-g83-58-7.html", driver)
     driver.quit()
