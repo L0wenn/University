@@ -5,15 +5,9 @@ step through all parts in the table, save images of parts
 and their info and write all of it into xlsx file
 """ 
 
-import errno
 import json
-from math import pi
 import os
 import shutil
-import signal
-import sys
-import time
-from functools import wraps
 from typing import Union
 from urllib.parse import urljoin
 from zipfile import BadZipFile
@@ -28,39 +22,11 @@ from selenium.webdriver.firefox.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-URL = "https://чинамобил.рф/"
+URL = "https://чинамобил.рф/magazin/folder/geely-mk-cross"
 
 with open("ignored.json", "r") as f:
     data = f.read()
     ignore_links = json.loads(data)["ignored"]
-
-def timeout(seconds=100, error_message=os.strerror(errno.ETIME)):
-    def decorator(func):
-        def _handle_timeout(signum, frame):
-            print("Refreshing")
-            try:
-                for line in os.popen("ps ax | grep firefox | grep -v grep"):
-                    fields = line.split()
-                    pid = fields[0]
-                    os.kill(int(pid), signal.SIGKILL)
-            except Exception as e:
-                print("An error encountered while closing Firefox processes:", e)
-                exit(0)
-
-            os.execv(sys.executable, ['python'] + sys.argv)
-
-        def wrapper(*args, **kwargs):
-            signal.signal(signal.SIGALRM, _handle_timeout)
-            signal.alarm(seconds)
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                signal.alarm(0)
-            return result
-
-        return wraps(func)(wrapper)
-
-    return decorator
 
 
 def parse(url:str, driver: WebDriver):
@@ -118,15 +84,11 @@ def parse(url:str, driver: WebDriver):
             parse(absolute_link, page)
             add_link_to_ignored(absolute_link)
 
-#@timeout(30)
 def save_part(url: str, driver: WebDriver):
     if url in ignore_links:
         return
 
     write_to_xls(url, driver)
-        
-    #write_to_xls(absolute_link, page)
-    #add_link_to_ignored(absolute_link)
 
 def write_to_xls(url: str, driver: WebDriver):
     try:
@@ -139,12 +101,13 @@ def write_to_xls(url: str, driver: WebDriver):
     page = wb.active
     soup = bs(driver.page_source, "html.parser")
 
+    part_img_name = ""
     part_NO = ""
     part_name = ""
-    manufacturer = ""
     category = ""
 
-    path = soup.find("div", class_="site-path").text
+    path = soup.find("div", class_="site-path").text.replace("Главная \ ", "")
+    manufacturer = path.split(" \ ")[0]
     table = soup.find("form", action="/magazin?mode=cart&action=add")
 
     if table is None:
@@ -153,11 +116,15 @@ def write_to_xls(url: str, driver: WebDriver):
         parts = p.get_text(strip=True, separator="\n").splitlines()
 
         for part in parts:
-            part.replace("\xa0", " ")
+            part = part.replace("\xa0", " ")
 
             part_NO = part.split(" ")[-1]
+            part_img_name = part_NO + ".jpg"
             part_name = " ".join(part.split(" ")[:-1])
-            category = path.replace("Главная \ ", "")
+            category = path.replace("Главная \ ", "").replace(" \ ", "/")
+            
+            page.append([part_img_name, manufacturer, part_NO, part_name, part_name, category])
+            wb.save("data.xlsx")
     else:
         tbody = table.find("tbody")
         oddtr = tbody.find_all("tr", class_="odd")
@@ -169,25 +136,20 @@ def write_to_xls(url: str, driver: WebDriver):
             text = text.split("|")
             
             part_NO = text[1]
+            part_img_name = part_NO + ".jpg"
             part_name = text[0]
-            manufacturer = text[3]
-            category = path.replace("Главная \ ", "")
-        
-        #print(tr[0].get_text("|", strip=True), "\n\n")
+            category = path.replace("Главная \ ", "").replace(" \ ", "/")
             
-    shutil.copy("data.xlsx", "recovery_data.xlsx")
-    page.append([part_NO, part_name, manufacturer, category])
-    wb.save("data.xlsx")
+            page.append([part_img_name, manufacturer, part_NO, part_name, part_name, category])
+            wb.save("data.xlsx")
+    
+    shutil.copy("data.xlsx", "recovery_data.xlsx")     
     wb.close()
 
 def connect_to(url: str, driver: WebDriver) -> Union[WebDriver, bool]:
     try:
         wait = WebDriverWait(driver, 10)
         driver.get(url)
-        # if check_400(driver):
-        #     return False
-            
-        # time.sleep(5)
         wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "a")))
 
         return driver
@@ -219,10 +181,12 @@ def check_400(driver: WebDriver) -> bool:
 if __name__ == "__main__":
     if not os.path.exists("data.xlsx"):
         headers = [
+        "Название изображения",
+        "Название производителя",
         "Номер детали",
         "Название детали",
-        "Название производителя",
-        "Категория"
+        "Развернутое описание детали",
+        "category"
         ]
         
         wb = openpyxl.Workbook()
