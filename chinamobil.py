@@ -22,7 +22,7 @@ from selenium.webdriver.firefox.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-URL = "https://чинамобил.рф/magazin/folder/dvigatel-geely-emgrand-ec7"
+URL = "https://чинамобил.рф/magazin/folder/zapchasti-katalog-geely"
 
 with open("ignored.json", "r") as f:
     data = f.read()
@@ -36,9 +36,14 @@ def parse(url:str, driver: WebDriver):
     page = connect_to(url, driver)
     soup = bs(page.page_source, "html.parser")
     
+    # I'm too fucking sleepy to deal with this one
     wrap_img_main = soup.find("div", class_="wrap-img-main")
+    try:
+        a = wrap_img_main.find("a")
+    except Exception:
+        a = None
     
-    if soup.find("div", class_="win") or soup.find("form", action="/magazin?mode=cart&action=add") or wrap_img_main.find("a"):
+    if soup.find("div", class_="win") or soup.find("form", action="/magazin?mode=cart&action=add") or a:
         absolute_link = None
 
         try:
