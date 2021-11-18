@@ -22,7 +22,7 @@ from selenium.webdriver.firefox.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-URL = "https://чинамобил.рф/magazin/folder/geely-mk-cross"
+URL = "https://чинамобил.рф/magazin/folder/dvigatel-geely-emgrand-ec7"
 
 with open("ignored.json", "r") as f:
     data = f.read()
@@ -36,7 +36,9 @@ def parse(url:str, driver: WebDriver):
     page = connect_to(url, driver)
     soup = bs(page.page_source, "html.parser")
     
-    if soup.find("div", class_="win") or soup.find("form", action="/magazin?mode=cart&action=add"):
+    wrap_img_main = soup.find("div", class_="wrap-img-main")
+    
+    if soup.find("div", class_="win") or soup.find("form", action="/magazin?mode=cart&action=add") or wrap_img_main.find("a"):
         absolute_link = None
 
         try:
@@ -46,9 +48,13 @@ def parse(url:str, driver: WebDriver):
 
         try:
             for folder in soup.find_all("div", class_="block-main-img"):
-                a = folder.find("a")["href"]
+                a = folder.find("a")
+                img = a.find("img")["src"]
+                
+                if "spacer.gif" in img:
+                    continue
 
-                absolute_link = urljoin(URL, a)
+                absolute_link = urljoin(URL, a["href"])
                 if absolute_link in ignore_links:
                     continue
 
