@@ -5,23 +5,18 @@ step through all parts in the table, save images of parts
 and their info and write all of it into xlsx file
 """ 
 
-import errno
 import json
 import os
 import shutil
-import signal
-import sys
-import time
-from functools import wraps
 from typing import Union
 from urllib.parse import urljoin
 from zipfile import BadZipFile
 
 import openpyxl
-import requests
 from bs4 import BeautifulSoup as bs
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import (NoSuchElementException,
+                                        TimeoutException, WebDriverException)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.webdriver import WebDriver
@@ -33,34 +28,6 @@ URL = "https://dealler.ru/katalog"
 with open("ignored.json", "r") as f:
     data = f.read()
     ignore_links = json.loads(data)["ignored"]
-
-def timeout(seconds=100, error_message=os.strerror(errno.ETIME)):
-    def decorator(func):
-        def _handle_timeout(signum, frame):
-            print("Refreshing ")
-            try:
-                for line in os.popen("ps ax | grep firefox | grep -v grep"):
-                    fields = line.split()
-                    pid = fields[0]
-                    os.kill(int(pid), signal.SIGKILL)
-            except Exception as e:
-                print("An error encountered while closing Firefox processes:", e)
-                exit(0)
-
-            os.execv(sys.executable, ['python'] + sys.argv)
-
-        def wrapper(*args, **kwargs):
-            signal.signal(signal.SIGALRM, _handle_timeout)
-            signal.alarm(seconds)
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                signal.alarm(0)
-            return result
-
-        return wraps(func)(wrapper)
-
-    return decorator
 
 
 def parse(url:str, driver: WebDriver):
@@ -91,7 +58,6 @@ def parse(url:str, driver: WebDriver):
         save_part(blueprint, page)
         add_link_to_ignored(blueprint)
 
-@timeout(30)
 def save_part(url: str, driver: WebDriver):
     # Download blueprints first
     if url in ignore_links:
@@ -101,7 +67,7 @@ def save_part(url: str, driver: WebDriver):
     bp_div = soup.find("div", class_="category_description")
     bp_img = bp_div.find("img")
     img_url = URL.replace("/katalog", bp_img["src"])
-    download_image(img_url)
+    download_image(img_url, driver)
 
     # Next download all parts from tables
     products = soup.find_all("div", class_="product-name")
@@ -127,7 +93,7 @@ def save_part(url: str, driver: WebDriver):
         except AttributeError:
             continue
 
-        download_image(img_url)
+        download_image(img_url, page)
         write_to_xls(absolute_link, img_url, page)
         add_link_to_ignored(absolute_link)
 
@@ -141,8 +107,8 @@ def write_to_xls(url: str, image, driver: WebDriver):
 
     page = wb.active
     filename = image.split("/")[-1]
-    info = [filename if not filename.startswith("image not available") else "chinatown.jpg"]
-
+    filename = filename if not filename.startswith("image not available") else "chinatown.jpg"
+    
     soup = bs(driver.page_source, "html.parser")
 
     product = soup.find("div", class_="product-area")
@@ -160,40 +126,28 @@ def write_to_xls(url: str, image, driver: WebDriver):
 
     path = "/".join(path)
 
-    try:
-        comm = soup.find("div", class_="product-description").text
-    except AttributeError:
-        comm = "None"
-
-    info.append(manufacturer.text)
-    info.append(number)
-    info.append(name.text)
-    info.append(desc.text.replace("\n", "").replace("\t", ""))
-    info.append(path.replace("Каталоги/", ""))
-    info.append(comm.replace("\nОписание\n\t", ""))
-
     shutil.copy("data.xlsx", "recovery_data.xlsx")
-    page.append(info)
+    page.append([filename, manufacturer.text, number, name.text, desc.text.replace("\n", "").replace("\t", ""), path.replace("Каталоги/", "")])
     wb.save("data.xlsx")
     wb.close()
     
-def download_image(url: str):
-    filename = url.split("/")[-1]
+def download_image(url: str, driver: WebDriver):
+    filename = url.split("/")[-1].replace(".jpg", ".png")
     path = f"images/{filename}"
 
     if filename == "image not available.png":
         return
     
-    try:
-        r = requests.get(url, stream=True)
-
-        with open(path, "wb") as f:
-            shutil.copyfileobj(r.raw, f)
-    except requests.exceptions.ConnectionError:
-        print("We are being ratelimited. Sleeping 1 minute")
-        time.sleep(60)
-        print("Retrying...")
-        download_image(url)
+    with open(path, "wb") as f:
+        try:
+            img = driver.find_element_by_xpath('/html/body/section/section[3]/div/div/div/div[2]/div/div[3]/div/div/div[2]/div[2]/div[1]/div/a/img')
+        except NoSuchElementException:
+            img = driver.find_element_by_xpath('/html/body/section/section[3]/div/div/div/div[2]/div/div[3]/div/div/div[2]/div[1]/p/img')
+        
+        try:
+            f.write(img.screenshot_as_png)
+        except WebDriverException:
+            pass
 
 def connect_to(url: str, driver: WebDriver) -> Union[WebDriver, bool]:
     try:
@@ -202,7 +156,6 @@ def connect_to(url: str, driver: WebDriver) -> Union[WebDriver, bool]:
         if check_400(driver):
             return False
             
-        time.sleep(5)
         wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "a")))
 
         return driver
@@ -218,7 +171,7 @@ def add_link_to_ignored(url: str):
     d = {"ignored": ignore_links}
 
     with open("ignored.json", "w") as f:
-        json.dump(d, f)
+        json.dump(d, f, indent=2, separators=(",", ": "))
 
 def check_400(driver: WebDriver) -> bool:
     soup = bs(driver.page_source, "html.parser")
@@ -239,8 +192,7 @@ if __name__ == "__main__":
         "Номер детали",
         "Название детали",
         "Развёрнутое описание детали",
-        "Категория",
-        "Комментарий"
+        "category"
         ]
         
         wb = openpyxl.Workbook()
@@ -252,5 +204,5 @@ if __name__ == "__main__":
     opts = Options()
     ff_driver = os.getcwd() + "/geckodriver"
     driver = webdriver.Firefox(options=opts, executable_path=ff_driver)
-    parse("https://dealler.ru/katalog/haval/haval-haval-h1/haval-h1-left-hand-drive-model-blue-logo-hf-h1-2/haval-h1-left-hand-drive-model-blue-logo-haval-h1-cc7151bma0p-16-ch035-g87-16/haval-h1-left-hand-drive-model-blue-logo-haval-h1-cc7151bma0p-16-%D0%B2%D0%BD%D1%83%D1%82%D1%80%D0%B5%D0%BD%D0%BD%D1%8F%D1%8F-%D0%B8-%D0%B2%D0%BD%D0%B5%D1%88%D0%BD%D1%8F%D1%8F-%D0%BE%D1%82%D0%B4%D0%B5%D0%BB%D0%BA%D0%B0-ch035-4-g87-16/haval-h1-cc7151bma0p-16-%D0%B2%D0%BD%D1%83%D1%82%D1%80%D0%B5%D0%BD%D0%BD%D1%8F%D1%8F-%D0%B8-%D0%B2%D0%BD%D0%B5%D1%88%D0%BD%D1%8F%D1%8F-%D0%BE%D1%82%D0%B4%D0%B5%D0%BB%D0%BA%D0%B0-%D0%B7%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9-%D1%80%D0%B5%D0%BC%D0%B5%D0%BD%D1%8C-%D0%B1%D0%B5%D0%B7%D0%BE%D0%BF%D0%B0%D1%81%D0%BD%D0%BE%D1%81%D1%82%D0%B8-g83-58-7.html", driver)
+    parse(URL, driver)
     driver.quit()
